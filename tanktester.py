@@ -93,7 +93,7 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 	except:
 			print "sorry man, force sensor comm error"
 	try: #to log data
-		f=open("/home/pi/tankinator/%s"%fname, "a+") #open new file in append mode
+		f=open("/home/pi/tankinator/BR_tankTester/%s"%fname, "a+") #open new file in append mode
 		f.write(datetime.datetime.now().strftime("%H:%M:%S.%f")) # write data in csv format
 		f.write(',')
 		f.write("%s"%FORCE)
