@@ -1,4 +1,4 @@
-#!/usr/bin/python
+##!/usr/bin/python
 import os 
 os.system('clear') # clear screen
 import serial #Libraries
@@ -7,10 +7,10 @@ import datetime
 import pigpio
 import sys
 pi = pigpio.pi() #initialize servo style ESC control
-pi.set_servo_pulsewidth(18,1500) #initialize
-time.sleep(5)
-MAX_THROTTLE = 2000 #max must always be more than minimum. Swap motor wires to change direction!
-MIN_THROTTLE = 1500
+MIN_THROTTLE = 1000
+MAX_THROTTLE = 2000
+pi.set_servo_pulsewidth(18,MIN_THROTTLE) #initialize
+time.sleep(5) #max must always be more than minimum. Swap motor wires to change direction!
 ser = serial.Serial(#scale rs232 to usb
 	    port='/dev/ttyUSB0',\
 	    baudrate=19200,\
@@ -36,7 +36,7 @@ timenow='{date:%Y-%m-%d %H:%M:%S}.csv'.format( date=datetime.datetime.now() )
 fname = test_name + ' ' + timenow #create filename from user name and time at start of test
 d_steps = input('Duration of each throttle step (seconds) (Adam says 5sec, with 30 second pause between)')
 num_steps = input('# of steps from 0 to full throttle (one direction - if wrong, swap 2 motor wires)')
-settle_time = 40 #seconds between throttle steps. Change to input if frequently varied across tests
+settle_time = 20 #seconds between throttle steps. Change to input if frequently varied across tests
 loop_period = 0.1 # 1/ this = hz
 throttle_bump = (MAX_THROTTLE-MIN_THROTTLE)/num_steps # % increase of throttle level
 calc_duration = (float(d_steps)*float(num_steps))+((num_steps-1)*settle_time) 
@@ -54,19 +54,20 @@ runmotor=1 #flag used to control data logging & output
 # note start time
 start_time = time.time()   
 while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when throttle exceeds 100% microseconds
-	if ((time.time() - start_time)>d_steps): # if the runtime is over
+	if ((time.time() - start_time)>d_steps) and runmotor == 0: # if the runtime is over
 		pi.set_servo_pulsewidth(18,MIN_THROTTLE) # turn off output
 		print 'Letting tank settle for %s seconds'%settle_time
-		time.sleep(settle_time) # do nothing, let tank settle
 		runmotor = 1 #raise flag to allow throttle change
-		start_time = time.time() # begin next throttle step 
+		if throttle == 2000:
+			break
+		time.sleep(settle_time)  
+		start_time = time.time()
 	if runmotor==1 and ((time.time()-start_time)<d_steps): #if change is ok and during next run period
 		prevthrottle = throttle #used to limit ramp up
 		while throttle < (prevthrottle + throttle_bump):
-			throttle = throttle + (throttle_bump/10) #ramping to not make it shake
-			pi.set_servo_pulsewidth(18,throttle) #set new throttle point
-			time.sleep(0.06)
-		time.sleep(1.5)# let things settle out before starting log	
+			throttle = throttle + int(throttle_bump) #ramping to not make it shake
+			pi.set_servo_pulsewidth(18,throttle)
+		time.sleep(1)# let things settle out before starting log	
 		runmotor = 0 #keep it from increasing again within same period
 	try:  #to talk to power supply
 		ser.write('MEASURE:VOLTAGE:DC?') #from documentation. 
@@ -103,6 +104,8 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 		#print "log file line logged"
 	except:
 		print "data not saved pal"				
-	time.sleep(loop_period) #unmanaged 10hz as initially tested. may run faster? Too many #s to analyze
+#	time.sleep(loop_period) #unmanaged 10hz as initially tested. may run faster? Too many #s to analyze
 pi.set_servo_pulsewidth(18,MIN_THROTTLE) #turn onff motor post test
-os.execv(__file__, sys.argv) # relaunches this script for next test
+time.sleep(2)
+print "test complete dude"
+ # relaunches this script for next test
