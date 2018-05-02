@@ -10,8 +10,6 @@ import dropbox
 from dropbox.files import WriteMode
 from dropbox.exceptions import ApiError, AuthError
 TOKEN = ''
-LOCALFILE = '%s'fname #file to backup
-BACKUPPATH = '/Tankinator_logs/%s'
 pi = pigpio.pi() #initialize servo style ESC control
 MIN_THROTTLE = 1000
 MAX_THROTTLE = 2000
@@ -50,11 +48,13 @@ print 'test time will be '
 print (calc_duration)
 print 'seconds. %s measurements will be logged. Go make something.'%((float(d_steps)*float(num_steps)) * (1/loop_period))
 time.sleep(1)
-f=open("/home/pi/tankinator/%s"%fname, "a+") # write header for CSV once
+f=open("/home/pi/tankinator/BR_tankTester/%s"%fname, "a+") # write header for CSV once
 f.write("Time, Force, Power, Voltage, Current, PWM")
 f.write('\n')
 f.close()
-prevthrottle=MIN_THROTTLE
+LOCALFILE = '%s'%fname #file to backup
+BACKUPPATH = '/%s'%fname
+prevthrottle = MIN_THROTTLE
 throttle = MIN_THROTTLE #center point throttle
 runmotor=1 #flag used to control data logging & output
 # note start time
@@ -71,8 +71,9 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 	if runmotor==1 and ((time.time()-start_time)<d_steps): #if change is ok and during next run period
 		prevthrottle = throttle #used to limit ramp up
 		while throttle < (prevthrottle + throttle_bump):
-			throttle = throttle + int(throttle_bump) #ramping to not make it shake
+			throttle = throttle + int(throttle_bump/10) #ramping to not make it shake
 			pi.set_servo_pulsewidth(18,throttle)
+			time.sleep(0.01)
 		time.sleep(1)# let things settle out before starting log	
 		runmotor = 0 #keep it from increasing again within same period
 	try:  #to talk to power supply
