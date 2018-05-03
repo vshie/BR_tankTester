@@ -6,8 +6,7 @@
  ******************************************************************************/
 
 #include "LPFilter.h"
-#include <Servo.h> 
-Servo myservo;
+
 
 
 
@@ -19,7 +18,7 @@ Servo myservo;
 
 // TEST RIG PARAMETERS
 #define LOAD_CELL_PIN   A0
-#define MECH_ADVANTAGE  (26.56f/29.938f)    // Lever arm ratio (T500X14) - vertical/horizontal
+//#define MECH_ADVANTAGE  (26.56f/29.938f)    // Lever arm ratio (T500X14) - vertical/horizontal
 //#define MECH_ADVANTAGE  (26.50f/29.938f)    // Lever arm ratio (T500X13) - vertical/horizontal
 //#define MECH_ADVANTAGE  (26.378f/29.938f)    // Lever arm ratio (T500) - vertical/horizontal
 //#define MECH_ADVANTAGE  (25.625f/29.938f)    // Lever arm ratio (T200) - vertical/horizontal
@@ -51,54 +50,32 @@ void setup() {
 
   // Initialize serial port
   Serial.begin(BAUD_RATE);
-   while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-
-  // Write csv header
-  //Serial.println("time (s),raw force (lb), filtered force (lb)");
 
   // Set next record time to now
   starttime          = millis();
   scheduledprinttime = starttime;
-   myservo.attach(9);
-  while (Serial.available() > 0) {
-    throttle = Serial.parseInt();
-     myservo.writeMicroseconds(throttle);
-
-    }
 }
 
 void loop() {
  if (millis() > scheduledlooptime) {
     scheduledlooptime+= 1000.0/LOOP_RATE;
       // Take a measurement
-    float rawforce = (measureForce(LOAD_CELL_PIN) - tarevalue)// moved to pi script! /MECH_ADVANTAGE;
+   float rawforce = (measureForce(LOAD_CELL_PIN) - tarevalue);//MECH_ADVANTAGE;
 
     // Filter the measurement
     float cookedforce = lpfilter.step(rawforce);
-    while (Serial.available() > 0) {
-    throttle = Serial.parseInt();
-    Serial.read();
-    while (rampthrottle<throttle)
-    rampthrottle++;
-    myservo.writeMicroseconds(rampthrottle);
-    }
-    myservo.writeMicroseconds(throttle);
-  
+ 
   if (millis() > scheduledprinttime) {
     scheduledprinttime += 1000.0/PRINT_RATE;
 
   
     // Write data to serial port
 
-     Serial.print(cookedforce,1);
-     Serial.print(",");
-     Serial.println(throttle,1);
+     Serial.println(cookedforce,1);
   }
  }
- myservo.writeMicroseconds(throttle);
-}
+ }
+
 
 /* This function measures the force on the FC22 compression load cell. The load
  * cell is already amplified with an output range of 0.5 to 4.5 V and a
