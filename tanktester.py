@@ -9,7 +9,7 @@ import sys
 import dropbox
 from dropbox.files import WriteMode
 from dropbox.exceptions import ApiError, AuthError
-TOKEN = 'zw2Y87FuiFAAAAAAAAABzz3xdXbddw7eNs6YlBrWe1UmYeGjBEzxBzIv3e1wFmpt'
+TOKEN = ''
 pi = pigpio.pi() #initialize servo style ESC control
 MIN_THROTTLE = 1000
 MAX_THROTTLE = 2000
