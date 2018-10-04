@@ -9,10 +9,13 @@ import sys
 import dropbox
 from dropbox.files import WriteMode
 from dropbox.exceptions import ApiError, AuthError
-TOKEN = ''
+TOKEN = 'zw2Y87FuiFAAAAAAAAABzz3xdXbddw7eNs6YlBrWe1UmYeGjBEzxBzIv3e1wFmpt'
 pi = pigpio.pi() #initialize servo style ESC control
 MIN_THROTTLE = 1000
 MAX_THROTTLE = 2000
+MECH_VERTICAL = float(26.56) #in- TWHOI=25.25  T200=25.625 T500X14=26.56
+MECH_HORIZ = float(29.938) #in  advtg = vert/horiz
+POLE_COUNT = int(14) #integer T200=14 T100=12
 pi.set_servo_pulsewidth(18,MIN_THROTTLE) #initialize
 time.sleep(5) #max must always be more than minimum. Swap motor wires to change direction!
 ser = serial.Serial(#scale rs232 to usb
@@ -29,16 +32,26 @@ ser2 = serial.Serial(#Arduino used as ADC
 	    stopbits=serial.STOPBITS_ONE,\
 	    bytesize=serial.EIGHTBITS,\
 	    timeout=3)
-print "Welcome to Tankinator test platform!! Automated in 4/2018 by TonyW"
+ser3 = serial.Serial(#Arduino used as RPM sensor
+	    port='/dev/ttyACM1',\
+            baudrate=19200,\
+            parity=serial.PARITY_NONE,\
+            stopbits=serial.STOPBITS_ONE,\
+            bytesize=serial.EIGHTBITS,\
+            timeout=3)
+print "Welcome to Tankinator test platform!! RPM sensing added in 10/2018 by Adam Simko"
 print "This script automates tank testing by running the thruster for a set durationm while recording data, with a long duration pause between each throttle level for tank to settle"
 print "Push ctrl+c to exit at any time. Launch script with /tankinator/./tanktester.py"
 ser2.flushInput()# clear input before taking reading for rough sync to seperate Arduino :(
+ser3.flushInput()# same ^^
 scale_level = (ser2.readline()) # Arduino configured to output at 10hz of this script
+scale_level = (ser3.readline()) #same^^
 print "The current reading of the force sensor is %s"%scale_level
 test_name = raw_input('Enter name of this test: ')
-timenow='{date:%Y-%m-%d %H:%M:%S}.csv'.format( date=datetime.datetime.now() )
+timenow='{date:%Y.%m.%d %H.%M.%S}.csv'.format( date=datetime.datetime.now() )
 fname = test_name + ' ' + timenow #create filename from user name and time at start of test
 d_steps = input('Duration of each throttle step (seconds) (Adam says 3sec, with 20 second pause between)')
+d_steps = d_steps+1 
 num_steps = input('# of steps from 0 to full throttle (one direction - if wrong, swap 2 motor wires)')
 settle_time = 20 #seconds between throttle steps. Change to input if frequently varied across tests
 loop_period = 0.1 # 1/ this = hz
@@ -49,7 +62,7 @@ print (calc_duration)
 print 'seconds. %s measurements will be logged. Go make something.'%((float(d_steps)*float(num_steps)) * (1/loop_period))
 time.sleep(1)
 f=open("/home/pi/tankinator/BR_tankTester/%s"%fname, "a+") # write header for CSV once
-f.write("Time, Force, Power, Voltage, Current, PWM")
+f.write("Time, Force, Power, Voltage, Current, RPM, PWM, efficiency (g/w)")
 f.write('\n')
 f.close()
 LOCALFILE = '%s'%fname #file to backup
@@ -61,7 +74,7 @@ runmotor=1 #flag used to control data logging & output
 start_time = time.time()   
 while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when throttle exceeds 100% microseconds
 	if ((time.time() - start_time)>d_steps) and runmotor == 0: # if the runtime is over
-		pi.set_servo_pulsewidth(18,MIN_THROTTLE) # turn off output
+		pi.set_servo_pulsewidth(18,MIN_THROTTLE) #initialize
 		print 'Letting tank settle for %s seconds'%settle_time
 		runmotor = 1 #raise flag to allow throttle change
 		if throttle == 2000:
@@ -71,9 +84,8 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 	if runmotor==1 and ((time.time()-start_time)<d_steps): #if change is ok and during next run period
 		prevthrottle = throttle #used to limit ramp up
 		while throttle < (prevthrottle + throttle_bump):
-			throttle = throttle + int(throttle_bump/10) #ramping to not make it shake
-			pi.set_servo_pulsewidth(18,throttle)
-			time.sleep(0.01)
+			throttle = throttle + int(throttle_bump) #ramping to not make it shake	
+			pi.set_servo_pulsewidth(18,throttle) #initialize
 		time.sleep(1)# let things settle out before starting log	
 		runmotor = 0 #keep it from increasing again within same period
 	try:  #to talk to power supply
@@ -87,12 +99,19 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 	except:
 		print "power supply comm error dude"
 	try: #to read the external ADC. Need to update prompts to include lever arm, remove this from Arduino sketch
-		input = float(ser2.readline()) # Arduino configured to output at 10hz of this script
 		ser2.flushInput()# clear input before taking reading for rough sync to seperate Arduino :(
-		FORCE = input #add scaling here to include lever arm input, remove from Arduino output
-		print {"PWM":throttle,"CURRENT":CURRENT,"VOLTAGE":VOLTAGE,"POWER":POWER,"FORCE":FORCE,"TIME":datetime.datetime.now().strftime("%H:%M:%S.%f")} #attempt at json readable format
+		input = (ser2.readline()) # Arduino configured to output at 10hz of this script
+		FORCE = float(input)/(MECH_VERTICAL/MECH_HORIZ)#add scaling here to include lever arm input, remove from Arduino output
+		efficiency = float(((FORCE*float(453.59))/POWER))
 	except:
-			print "sorry man, force sensor comm error"
+                        print "sorry man, force sensor com error"
+	try: #to read the external RPM sensor.
+		ser3.flushInput()# clear input before taking reading for rough sync to seperate Arduino :(
+		input = (ser3.readline()) # Arduino configured to output at 10hz of this script
+		RPM = 60000000/(float(input)*(POLE_COUNT/2))#Get RPM from filtered period value, incorporate pole count
+		print {"efficiency":efficiency,"PWM":throttle,"RPM":RPM,"CURRENT":CURRENT,"VOLTAGE":VOLTAGE,"POWER":POWER,"FORCE":FORCE,"TIME":datetime.datetime.now().strftime("%H:%M:%S.%f")} #attempt at json readable format
+	except:
+			print "sorry man, RPM sensor comm error"
 	try: #to log data
 		f=open("/home/pi/tankinator/BR_tankTester/%s"%fname, "a+") #open new file in append mode
 		f.write(datetime.datetime.now().strftime("%H:%M:%S.%f")) # write data in csv format
@@ -105,7 +124,11 @@ while (throttle <=MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when 
 		f.write(',')
 		f.write("%s"%CURRENT)
 		f.write(',')
+		f.write("%s"%RPM)
+		f.write(',')
 		f.write("%s"%throttle)
+		f.write(',')
+		f.write("%s"%efficiency)
 		f.write('\n')
 		f.close()
 		#print "log file line logged"
@@ -152,3 +175,4 @@ if __name__ == '__main__':
             "access token from the app console on the web.")
     backup()    # Create a backup of the current log file
     print("Data saved to Adam's dropbox by TANKINATOR!!!!!!")
+
