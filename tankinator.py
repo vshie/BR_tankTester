@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/python2
+
 import datetime
 import os
 import sys
