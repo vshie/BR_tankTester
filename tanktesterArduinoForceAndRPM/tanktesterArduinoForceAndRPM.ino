@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "LPFilter.h"
+#include <Servo.h>
 
 // SERIAL COMMUNICATION
 #define BAUD_RATE       19200
@@ -15,6 +16,7 @@
 
 // TEST RIG PARAMETERS
 #define LOAD_CELL_PIN   A0
+#define ESC_PIN         9
 
 // global variables
 unsigned long scheduledprinttime;   // ms
@@ -31,6 +33,8 @@ volatile long period_value = 0; //period measuring setup
 volatile long prev_time = 0; //start with timer at 0
 volatile long new_time = 0;
 int           RPM;
+int           output;
+Servo         esc;
 
 void setup() {
   // Tare the load cell on startup
@@ -56,11 +60,24 @@ void setup() {
   pinMode(13,OUTPUT);
   digitalWrite(13,HIGH);
 
+  // Set up PWM
+  esc.attach(ESC_PIN);
+  esc.writeMicroseconds(1000);
+
   // when pin D2 goes high, call the rising function
   attachInterrupt(0, rising, RISING);
 }
 
 void loop() {
+  // listen for new RPM commands
+  if (Serial.available()) {
+    int input = Serial.parseInt();
+    if ( input > 800 && input < 2200 ) {
+      output = input;
+    }
+  }
+  esc.writeMicroseconds(output);
+  
   if (millis() > scheduledlooptime) {
     scheduledlooptime += 1000.0/LOOP_RATE;
 
