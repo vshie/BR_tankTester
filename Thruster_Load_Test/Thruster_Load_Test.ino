@@ -7,23 +7,14 @@
 
 #include "LPFilter.h"
 
-
-
-
 // SERIAL COMMUNICATION
 #define BAUD_RATE       19200
 #define PRINT_RATE      10.0f  // Hz
-#define LOOP_RATE       200.0f  //hz
+#define LOOP_RATE       200.0f  // hz
 #define CUTOFF_FREQ     5.0f   // Hz (low-pass filter cutoff)
 
 // TEST RIG PARAMETERS
 #define LOAD_CELL_PIN   A0
-//#define MECH_ADVANTAGE  (26.56f/29.938f)    // Lever arm ratio (T500X14) - vertical/horizontal
-//#define MECH_ADVANTAGE  (26.50f/29.938f)    // Lever arm ratio (T500X13) - vertical/horizontal
-//#define MECH_ADVANTAGE  (26.378f/29.938f)    // Lever arm ratio (T500) - vertical/horizontal
-//#define MECH_ADVANTAGE  (25.625f/29.938f)    // Lever arm ratio (T200) - vertical/horizontal
-//#define MECH_ADVANTAGE  (24.25f/29.938f)    // Lever arm ratio (M200) - vertical/horizontal
-//#define MECH_ADVANTAGE  (18.875f/29.938f)    // Lever arm ratio (TWHOI) - vertical/horizontal
 
 // global variables
 unsigned long scheduledprinttime;   // ms
@@ -41,7 +32,7 @@ void setup() {
   float forceaverage = 0;
   for (int i = 0; i < 5; i++) {
     forceaverage += measureForce(LOAD_CELL_PIN);
-    delay(1.0/PRINT_RATE);
+    delay(0.1);
   }
   tarevalue = forceaverage/5.0f;
 
@@ -57,24 +48,23 @@ void setup() {
 }
 
 void loop() {
- if (millis() > scheduledlooptime) {
-    scheduledlooptime+= 1000.0/LOOP_RATE;
-      // Take a measurement
-   float rawforce = (measureForce(LOAD_CELL_PIN) - tarevalue);//MECH_ADVANTAGE;
-
+  if (millis() > scheduledlooptime) {
+    scheduledlooptime += 1000.0/LOOP_RATE;
+      
+    // Take a measurement
+    float rawforce = (measureForce(LOAD_CELL_PIN) - tarevalue);
+   
     // Filter the measurement
     float cookedforce = lpfilter.step(rawforce);
  
-  if (millis() > scheduledprinttime) {
-    scheduledprinttime += 1000.0/PRINT_RATE;
-
-  
-    // Write data to serial port
-
-     Serial.println(cookedforce,1);
+    if (millis() > scheduledprinttime) {
+      scheduledprinttime += 1000.0/PRINT_RATE;
+      
+      // Write data to serial port
+      Serial.println(cookedforce,1);
+    }
   }
- }
- }
+}
 
 
 /* This function measures the force on the FC22 compression load cell. The load
