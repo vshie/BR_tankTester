@@ -46,12 +46,13 @@ parser.add_argument(
         required=False,
         type=str,
         default="/dev/ttyACM0",
-        help="Serial to communicate with force/RPM sensor."
+        help="Serial to communicate with force/rpm sensor."
 )
 
 args = parser.parse_args()
 
 # min and max throttle
+STOP_THROTTLE = 1000
 MIN_THROTTLE = 1000
 MAX_THROTTLE = 2000
 # in TWHOI = 25.25, T200 = 25.625, T500X14 = 26.56, T500x15 = 26.586
@@ -61,7 +62,7 @@ MECH_HORIZ = 29.938
 # in T200 = 14, T100 = 12
 POLE_COUNT = 14
 settle_time = 20 #seconds between throttle steps. Change to input if frequently varied across tests
-rest_time = 2 # seconds to run before starting logging
+rest_time = 1.5 # seconds to run before starting logging
 
 # clear screen
 os.system('clear')
@@ -103,19 +104,19 @@ else:
 
 print ""
 
-setPWM(arduino_serial,MIN_THROTTLE)
+setPWM(arduino_serial,STOP_THROTTLE)
 
 test_name = raw_input('Enter name of this test: ')
 if type(test_name) != str:
     print("Error: Test name should be a string!")
     sys.exit(-1)
 
-timenow = '{date:%Y.%m.%d %H.%M.%S}.csv'.format(date=datetime.datetime.now())
+timenow = '{date:%Y.%m.%d %H.%M.%S}'.format(date=datetime.datetime.now())
 fname = test_name + ' ' + timenow #create filename from user name and time at start of test
 print('File will be created: %s' % fname)
 
-d_steps = int(raw_input('Duration of each throttle step (seconds) (Adam says 3sec, with 20 second pause between): '))
-if type(d_steps) != float and type(d_steps) != int:
+duration = int(raw_input('Duration of each throttle step (seconds) (Adam says 3sec, with 20 second pause between): '))
+if type(duration) != float and type(duration) != int:
     print("Error: Duration is not a number!")
     sys.exit(-1)
 
@@ -125,93 +126,153 @@ if type(num_steps) != int:
     sys.exit(-1)
 
 loop_period = 0.1 # 1/ this = hz
-throttle_bump = (MAX_THROTTLE-MIN_THROTTLE)/num_steps # % increase of throttle level
-calc_duration = d_steps*num_steps + num_steps*settle_time
+throttle_bump = (MAX_THROTTLE-MIN_THROTTLE)/(num_steps-1) # % increase of throttle level
+calc_duration = duration*num_steps + num_steps*settle_time
 print("Test time will be: %d seconds" % calc_duration)
-print("The total number of measurements will be %d." % (d_steps*num_steps/loop_period))
+print("The total number of measurements will be %d." % (duration*num_steps/loop_period))
 print("Go make something.")
 
-f = open("/home/pi/tankinator/BR_tankTester/%s" % fname, "a+") # write header for CSV once
-f.write("Time, PWM, RPM, Current, Voltage, Power, Efficiency")
+f = open("/home/pi/tankinator/BR_tankTester/data/%s.csv" % fname, "a+") # write header for CSV once
+f.write("Time, PWM, RPM, Current, Voltage, Power, Force, Efficiency")
+f.write('\n')
+f.close()
+f = open("/home/pi/tankinator/BR_tankTester/data/%s.csv" % (fname+"-average"), "a+") # write header for CSV once
+f.write("Time, PWM, RPM, Current, Voltage, Power, Force, Efficiency")
 f.write('\n')
 f.close()
 LOCALFILE = '%s' % fname #file to backup
 BACKUPPATH = '/%s' % fname
-prevthrottle = MIN_THROTTLE
-throttle = MIN_THROTTLE #center point throttle
-runmotor = 1 #flag used to control data logging & output
-# note start time
-start_time = time.time()
-while (throttle <= MAX_THROTTLE) and (prevthrottle != MAX_THROTTLE): # exit when throttle exceeds 100% microseconds
-    if ((time.time() - start_time) > d_steps) and runmotor == 0: # if the runtime is over
-        setPWM(arduino_serial,MIN_THROTTLE)
-        print('Letting tank settle for %d seconds' % settle_time)
-        runmotor = 1 #raise flag to allow throttle change
-        if throttle == 2000:
-            break
+first_loop = True;
+
+for throttle in range(MIN_THROTTLE,MAX_THROTTLE+1,throttle_bump): # exit when throttle exceeds 100% microseconds
+    setPWM(arduino_serial,STOP_THROTTLE)
+    
+    if first_loop:
+        first_loop = False
+    else:
+        print('Letting tank settle for %d seconds' % settle_time)    
         time.sleep(settle_time)
-        start_time = time.time()
-    if runmotor == 1 and ((time.time()-start_time) < d_steps): #if change is ok and during next run period
-        prevthrottle = throttle #used to limit ramp up
-        while throttle < (prevthrottle + throttle_bump):
-            throttle = throttle + int(throttle_bump) #ramping to not make it shake
-            setPWM(arduino_serial,throttle)
-        time.sleep(rest_time)# let things settle out before starting log
-        runmotor = 0 #keep it from increasing again within same period
-    try:  #to talk to power supply
-        power_supply_serial.write('MEASURE:VOLTAGE:DC?') #from documentation.
+    
+    setPWM(arduino_serial,throttle)
+
+    time.sleep(rest_time)# let things settle out before starting log
+
+    start_time = time.time()
+
+    rpmSum = 0
+    currentSum = 0
+    voltageSum = 0
+    powerSum = 0
+    forceSum = 0
+    efficiencySum = 0
+    count = 0
+
+    while time.time() - start_time < duration:
+        rpm = 0
+        current = 0
+        voltage = 0
+        power = 0
+        force = 0
+        efficiency = 0
+
+        power_supply_serial.write('MEASURE:voltage:DC?') #from documentation.
         power_supply_serial.write(b'\rL1\r') #sends enter after request to get return
-        VOLTAGE = float(power_supply_serial.readline()) #cast to float
-        power_supply_serial.write('MEASURE:CURRENT:DC?')
+        voltage = float(power_supply_serial.readline()) #cast to float
+        power_supply_serial.write('MEASURE:current:DC?')
         power_supply_serial.write(b'\rL1\r')
-        CURRENT = float(power_supply_serial.readline())
-        POWER = VOLTAGE * CURRENT #calculate the useful metric
-    except:
-        print("power supply comm error dude")
-    try: #to read the external ADC.
+        current = float(power_supply_serial.readline())
+        power = voltage * current #calculate the useful metric
+
         arduino_serial.flushInput()# clear input before taking reading for rough sync to seperate Arduino :(
         data = readArduino(arduino_serial)
-        force = data[0]
-        FORCE = float(force)/(MECH_VERTICAL/MECH_HORIZ) # Lever arm mechanical advantage correction
-        efficiency = 453.59*FORCE/POWER #Efficiency calculation in grams/watt
-        period = float(data[1]) # Arduino configured to output at 10hz of this script
-        RPM = 60000000/(period*(POLE_COUNT/2))#Get RPM from filtered period value, incorporate pole count
-    except:
-        print("sorry man, force/RPM sensor com error")
+        if len(data) is 2:
+            force = data[0]
+            force = float(force)/(MECH_VERTICAL/MECH_HORIZ) # Lever arm mechanical advantage correction
+            if power > 0:
+                efficiency = 453.59*force/power #Efficiency calculation in grams/watt
+            period = float(data[1]) # Arduino configured to output at 10hz of this script
+            if period > 0:
+                rpm = 60000000/(period*(POLE_COUNT/2))#Get rpm from filtered period value, incorporate pole count
+
+        print "%4.0f us\t\t" % throttle,
+        print "%4.1f rpm\t" % rpm,
+        print "%3.2f A\t\t" % current,
+        print "%3.2f V\t\t" % voltage,
+        print "%5.1f W\t\t" % power,
+        print "%3.2f lb\t\t" % force,
+        print "%3.2f g/W" % efficiency
+
+        rpmSum += rpm
+        currentSum += current
+        voltageSum += voltage
+        powerSum += power
+        forceSum += force
+        efficiencySum += efficiency
+        count += 1
+
+        #todo: add average output line
+
+        try: #to log data
+            f = open("/home/pi/tankinator/BR_tankTester/data/%s.csv" % fname, "a+") #open new file in append mode
+            f.write(datetime.datetime.now().strftime("%H:%M:%S.%f")) # write data in csv format
+            f.write(',')
+            f.write("%4.0f"%throttle)
+            f.write(',')
+            f.write("%4.2f"%rpm)
+            f.write(',')
+            f.write("%3.2f"%current)
+            f.write(',')
+            f.write("%3.2f"%voltage)
+            f.write(',')
+            f.write("%5.2f"%power)
+            f.write(',')
+            f.write("%3.2f"%force)
+            f.write(',')
+            f.write("%3.2f"%efficiency)
+            f.write('\n')
+            f.close()
+        except:
+            print("data not saved pal")
+
+    rpmAvg = rpmSum/count
+    currentAvg = currentSum/count
+    voltageAvg = voltageSum/count
+    powerAvg = powerSum/count
+    forceAvg = forceSum/count
+    efficiencyAvg = efficiencySum/count
 
     print "%4.0f us\t\t" % throttle,
-    print "%4.1f RPM\t" % RPM,
-    print "%3.2f A\t\t" % CURRENT,
-    print "%3.2f V\t\t" % VOLTAGE,
-    print "%5.1f W\t\t" % POWER,
-    print "%3.2f lb\t\t" % FORCE,
-    print "%3.2f g/W" % efficiency
-
-    #todo: add average output line
+    print "%4.1f rpm\t" % rpmAvg,
+    print "%3.2f A\t\t" % currentAvg,
+    print "%3.2f V\t\t" % voltageAvg,
+    print "%5.1f W\t\t" % powerAvg,
+    print "%3.2f lb\t\t" % forceAvg,
+    print "%3.2f g/W\t" % efficiencyAvg,
+    print "(Average)"
 
     try: #to log data
-        f = open("/home/pi/tankinator/BR_tankTester/%s" % fname, "a+") #open new file in append mode
+        f = open("/home/pi/tankinator/BR_tankTester/data/%s.csv" % (fname+"-average"), "a+") #open new file in append mode
         f.write(datetime.datetime.now().strftime("%H:%M:%S.%f")) # write data in csv format
         f.write(',')
         f.write("%4.0f"%throttle)
         f.write(',')
-        f.write("%4.2f"%RPM)
+        f.write("%4.2f"%rpmAvg)
         f.write(',')
-        f.write("%3.2f"%CURRENT)
+        f.write("%3.2f"%currentAvg)
         f.write(',')
-        f.write("%3.2f"%VOLTAGE)
+        f.write("%3.2f"%voltageAvg)
         f.write(',')
-        f.write("%5.2f"%POWER)
+        f.write("%5.2f"%powerAvg)
         f.write(',')
-        f.write("%3.2f"%FORCE)
+        f.write("%3.2f"%forceAvg)
         f.write(',')
-        f.write("%3.2f"%efficiency)
+        f.write("%3.2f"%efficiencyAvg)
         f.write('\n')
         f.close()
     except:
         print("data not saved pal")
 
-setPWM(arduino_serial,MIN_THROTTLE)
+setPWM(arduino_serial,STOP_THROTTLE)
 time.sleep(2)
 print("test complete dude")
 
