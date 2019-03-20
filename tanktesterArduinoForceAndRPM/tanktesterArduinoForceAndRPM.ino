@@ -84,7 +84,7 @@ void loop() {
         // This is unrealistic because RPM would be too high
       } else {
         // Write data to serial port
-        Serial.print(cookedforce,1);
+        Serial.print(cookedforce,2);
         Serial.print(",");
   //      Serial.print(filteredRPM,1);
   //      Serial.print(",");
